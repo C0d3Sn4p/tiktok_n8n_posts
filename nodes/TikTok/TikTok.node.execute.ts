@@ -9,73 +9,164 @@ export async function execute(this: IExecuteFunctions) {
 
 	for (let i = 0; i < items.length; i++) {
 		try {
-			if (resource === 'post') {
-				if (operation === 'create') {
-					// Obter parâmetros
+			let response;
+
+			// Operações de Vídeo
+			if (resource === 'video') {
+				if (operation === 'upload') {
 					const videoFile = this.getNodeParameter('videoFile', i) as string;
-					const caption = this.getNodeParameter('caption', i) as string;
-					const additionalFields = this.getNodeParameter('additionalFields', i) as {
-						scheduleTime?: string;
-						privacyLevel?: string;
-						allowComments?: boolean;
-					};
-
-					// Preparar o formulário
-					const formData = new FormData();
-					formData.append('video', videoFile);
-					formData.append('caption', caption);
-
-					if (additionalFields.scheduleTime) {
-						formData.append('schedule_time', additionalFields.scheduleTime);
-					}
-
-					if (additionalFields.privacyLevel) {
-						formData.append('privacy_level', additionalFields.privacyLevel);
-					}
-
-					if (additionalFields.allowComments !== undefined) {
-						formData.append('allow_comments', additionalFields.allowComments.toString());
-					}
-
-					// Fazer a requisição
-					const response = await apiRequest.call(
+					
+					// 1. Iniciar upload
+					const initResponse = await apiRequest.call(
 						this,
 						'POST',
-						'/video/upload',
+						'/video/init/',
+						{ source: 'FILE_UPLOAD' }
+					);
+
+					// 2. Upload do vídeo
+					const formData = new FormData();
+					formData.append('video', videoFile);
+					formData.append('upload_id', initResponse.data.upload_id);
+
+					response = await apiRequest.call(
+						this,
+						'POST',
+						'/video/upload/',
 						formData,
 						{},
 						{
 							headers: {
 								'Content-Type': 'multipart/form-data',
 							},
-						},
+						}
 					);
+				}
 
-					returnData.push({
-						json: response,
-						pairedItem: {
-							item: i,
-						},
-					});
+				if (operation === 'delete') {
+					const videoId = this.getNodeParameter('videoId', i) as string;
+					response = await apiRequest.call(
+						this,
+						'POST',
+						`/video/delete/`,
+						{ video_id: videoId }
+					);
+				}
+			}
+
+			// Operações de Post
+			if (resource === 'post') {
+				if (operation === 'create') {
+					const videoId = this.getNodeParameter('videoId', i) as string;
+					const caption = this.getNodeParameter('caption', i) as string;
+					const additionalFields = this.getNodeParameter('additionalFields', i) as {
+						scheduleTime?: string;
+						privacyLevel?: string;
+						allowComments?: boolean;
+						brandContent?: boolean;
+						music?: string;
+					};
+
+					const body: any = {
+						video_id: videoId,
+						caption,
+						...additionalFields,
+					};
+
+					response = await apiRequest.call(
+						this,
+						'POST',
+						'/post/publish/',
+						body
+					);
 				}
 
 				if (operation === 'delete') {
 					const postId = this.getNodeParameter('postId', i) as string;
-
-					const response = await apiRequest.call(
+					response = await apiRequest.call(
 						this,
-						'DELETE',
-						`/video/${postId}`,
+						'POST',
+						`/post/delete/`,
+						{ post_id: postId }
 					);
+				}
 
-					returnData.push({
-						json: response,
-						pairedItem: {
-							item: i,
-						},
-					});
+				if (operation === 'get') {
+					const postId = this.getNodeParameter('postId', i) as string;
+					response = await apiRequest.call(
+						this,
+						'GET',
+						`/post/info/`,
+						{ post_id: postId }
+					);
+				}
+
+				if (operation === 'list') {
+					response = await apiRequest.call(
+						this,
+						'GET',
+						'/post/list/'
+					);
 				}
 			}
+
+			// Operações de Usuário
+			if (resource === 'user') {
+				if (operation === 'info') {
+					response = await apiRequest.call(
+						this,
+						'GET',
+						'/user/info/'
+					);
+				}
+
+				if (operation === 'videos') {
+					response = await apiRequest.call(
+						this,
+						'GET',
+						'/user/videos/'
+					);
+				}
+			}
+
+			// Operações de Analytics
+			if (resource === 'analytics') {
+				const metrics = this.getNodeParameter('metrics', i) as string[];
+				const dateRange = this.getNodeParameter('dateRange', i) as string;
+
+				if (operation === 'postStats') {
+					const postId = this.getNodeParameter('postId', i) as string;
+					response = await apiRequest.call(
+						this,
+						'GET',
+						'/post/analytics/',
+						{
+							post_id: postId,
+							metrics: metrics.join(','),
+							date_range: dateRange,
+						}
+					);
+				}
+
+				if (operation === 'accountStats') {
+					response = await apiRequest.call(
+						this,
+						'GET',
+						'/user/analytics/',
+						{
+							metrics: metrics.join(','),
+							date_range: dateRange,
+						}
+					);
+				}
+			}
+
+			returnData.push({
+				json: response,
+				pairedItem: {
+					item: i,
+				},
+			});
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
